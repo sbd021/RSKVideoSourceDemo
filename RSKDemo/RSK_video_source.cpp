@@ -51,7 +51,7 @@ namespace agora{
             return node_ok;
         }
 
-        bool RSKVideoSourceSink::initialize(IRSKVideoSourceEventHandler *eventHandler, const char* appid)
+        bool RSKVideoSourceSink::initialize(IRSKVideoSourceEventHandler *eventHandler, const char* appid, VideoConfig config)
         {
             if (m_initialized)
                 return true;
@@ -110,7 +110,31 @@ namespace agora{
                 std::string idparam = "id:" + m_peerId;
                 std::string pidparam = "pid:" + ss.str();
                 std::string appidparam = "appid:" + std::string(appid);
-                const char* params[] = { cmdname.c_str(), idparam.c_str(), pidparam.c_str(), appidparam.c_str(), nullptr };
+
+				char szParam[20] = { 0 };
+				sprintf_s(szParam, "width:%d", config.width);
+				std::string wParam = szParam;
+				sprintf_s(szParam, "height:%d", config.height);
+				std::string hParam = szParam;
+
+				sprintf_s(szParam, "fps:%d", config.fps);
+				std::string fParam = szParam;
+				sprintf_s(szParam, "bitrate:%d", config.bitrate);
+				std::string bParam = szParam;
+
+
+
+				/*sprintf_s(szParam, "sampleRate:%d", sampleRate);
+				std::string sampleRateParam = szParam;
+
+				sprintf_s(szParam, "channels:%d", channels);
+				std::string cParam = szParam;
+				
+				sprintf_s(szParam, "samples:%d", samples);
+				std::string sParam = szParam;*/
+
+                const char* params[] = { cmdname.c_str(), idparam.c_str(), pidparam.c_str(), appidparam.c_str()
+					, wParam.c_str(), hParam.c_str(), fParam.c_str(), bParam.c_str(), nullptr }; // sampleRateParam.c_str(), cParam.c_str(), sParam.c_str(),
                 m_sourceNodeProcess.reset(INodeProcess::CreateNodeProcess(path.c_str(), params));
                 if (!m_sourceNodeProcess.get()) {
                     break;
@@ -186,7 +210,7 @@ namespace agora{
 			}
 			else if (msg == RSK_IPC_STREAMING_CONNECTION_STATE_CHANGED) {
 				ConnectionStateCmd* cmd = (ConnectionStateCmd*)payload;
-				m_eventHandler->onStreamingConnectionStateChanged((STREAMING_CONNECTION_STATE)cmd->state);
+				m_eventHandler->onStreamingConnectionStateChanged((VIDEO_SOURCE_STREAMING_CONNECTION_STATE)cmd->state);
 			}
    
         }
@@ -235,7 +259,7 @@ namespace agora{
 			return node_status_error;
 		}
 
-		int RSKVideoSourceSink::setAudioStreamConfiguration(const AudioStreamConfiguration& config){
+		int RSKVideoSourceSink::setAudioStreamConfiguration(const AudioStreamConfigurationCmd& config){
 			if (m_initialized) {
 				AudioStreamConfigurationCmd cmd(config);
 				return m_ipcMsg->sendMessage(RSK_IPC_SET_AUDIO_CONFIG, (char*)&cmd, sizeof(VideoStreamConfigurationCmd)) ? node_ok : node_generic_error;
@@ -243,7 +267,7 @@ namespace agora{
 			return node_status_error;
 		}
 
-		int RSKVideoSourceSink::setVideoStreamConfiguration(const VideoStreamConfiguration& config){
+		int RSKVideoSourceSink::setVideoStreamConfiguration(const VideoStreamConfigurationCmd& config){
 			if (m_initialized) {
 				VideoStreamConfigurationCmd cmd(config);
 				return m_ipcMsg->sendMessage(RSK_IPC_SET_VIDEO_CONFIG, (char*)&cmd, sizeof(VideoStreamConfigurationCmd)) ? node_ok : node_generic_error;
@@ -328,17 +352,18 @@ namespace agora{
 			}
 		}
 
-		void RSKVideoSourceSink::pushExternalVideoFrame(uint8_t* buffer, int width, int height)
+		void RSKVideoSourceSink::pushExternalVideoFrame(uint8_t* buffer, VideoFrameIpcHeader header)
 		{
-			if (!buffer || width == 0 || height == 0)
+			if (!buffer || header.width == 0 || header.height == 0)
 				return;
 
 			char* pBuf = m_buf.data();
-			int size = width * height * 3 / 2;
+			int size = header.width * header.height * 3 / 2;
 			VideoFrameIpcHeader* videoHeader = (VideoFrameIpcHeader*)pBuf;
-			videoHeader->width  = width;
-			videoHeader->height = height;
+			videoHeader->width  = header.width;
+			videoHeader->height = header.height;
 			videoHeader->len = size;
+			videoHeader->renderTimeMs = header.renderTimeMs;
 			char* video_buffer = pBuf + sizeof(VideoFrameIpcHeader);
 			memcpy(video_buffer, buffer, size);
 

@@ -51,17 +51,17 @@ void CRSKVideoSourceEventHandler::onStartStreamingSuccess()
 	::PostMessage(m_hwnd, START_SUCCESS, 0, 0);
 }
 	 
-void CRSKVideoSourceEventHandler::onStartStreamingFailure(START_STREAMING_ERROR err, const char* msg)
+void CRSKVideoSourceEventHandler::onStartStreamingFailure(VIDEO_SOURCE_START_STREAMING_ERROR err, const char* msg)
 {
 	::PostMessage(m_hwnd, START_FAILURE, err, 0);
 }
 	 
-void CRSKVideoSourceEventHandler::onMediaStreamingError(MEDIA_STREAMING_ERROR err, const char* msg)
+void CRSKVideoSourceEventHandler::onMediaStreamingError(VIDEO_SOURCE_MEDIA_STREAMING_ERROR err, const char* msg)
 {
 	::PostMessage(m_hwnd, START_MEDIA_ERR, err, 0);
 }
 	
-void CRSKVideoSourceEventHandler::onStreamingConnectionStateChanged(STREAMING_CONNECTION_STATE state)
+void CRSKVideoSourceEventHandler::onStreamingConnectionStateChanged(VIDEO_SOURCE_STREAMING_CONNECTION_STATE state)
 {
 	::PostMessage(m_hwnd, START_STATE_CHANGED, state, 0);
 }
@@ -77,9 +77,13 @@ void CRSKVideoSourceEventHandler::onVideoSourceExit()
 LRESULT CRSKDemoDlg::OnEIDStartStreamingSuccess(WPARAM wParam, LPARAM lParam)
 {
 	m_lstInfo.InsertString(m_lstInfo.GetCount(), L"onStartStreamingSuccess");
-	SetTimer(video_id, 100, NULL);
 	
-	hAudioTherad = (HANDLE)_beginthreadex(NULL, 0, AudioThread, this, 0, NULL);
+	audioFlag = true;
+	videoFlag = true;
+
+	hAudioThread = (HANDLE)_beginthreadex(NULL, 0, AudioThread, this, 0, NULL);
+
+	hVideoThread = (HANDLE)_beginthreadex(NULL, 0, VideoThread, this, 0, NULL);
 	//SetTimer(audio_id, 100, NULL);
 	startSuccess = true;
 	return 0;
@@ -101,21 +105,21 @@ LRESULT CRSKDemoDlg::OnEIDMediaStreamingError(WPARAM wParam, LPARAM lParam)
 }
 LRESULT CRSKDemoDlg::OnEIDStreamingConnectionStateChanged(WPARAM wParam, LPARAM lParam)
 {
-	STREAMING_CONNECTION_STATE state = (STREAMING_CONNECTION_STATE)wParam;
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE state = (VIDEO_SOURCE_STREAMING_CONNECTION_STATE)wParam;
 	CString str;
 	switch (state)
 	{
-	case agora::streaming::STREAMING_CONNECTION_STATE_DISCONNECTED:
-		str = _T("STREAMING_CONNECTION_STATE_DISCONNECTED");
+	case VIDEO_SOURCE_STREAMING_CONNECTION_STATE_DISCONNECTED:
+		str = _T("VIDEO_SOURCE_STREAMING_CONNECTION_STATE_DISCONNECTED");
 		break;
-	case agora::streaming::STREAMING_CONNECTION_STATE_CONNECTED:
-		str = _T("STREAMING_CONNECTION_STATE_CONNECTED");
+	case VIDEO_SOURCE_STREAMING_CONNECTION_STATE_CONNECTED:
+		str = _T("VIDEO_SOURCE_STREAMING_CONNECTION_STATE_CONNECTED");
 		break;
-	case agora::streaming::STREAMING_CONNECTION_STATE_RECONNECTING:
-		str = _T("STREAMING_CONNECTION_STATE_RECONNECTING");
+	case VIDEO_SOURCE_STREAMING_CONNECTION_STATE_RECONNECTING:
+		str = _T("VIDEO_SOURCE_STREAMING_CONNECTION_STATE_RECONNECTING");
 		break;
-	case agora::streaming::STREAMING_CONNECTION_STATE_FAILED:
-		str = _T("STREAMING_CONNECTION_STATE_FAILED");
+	case VIDEO_SOURCE_STREAMING_CONNECTION_STATE_FAILED:
+		str = _T("VIDEO_SOURCE_STREAMING_CONNECTION_STATE_FAILED");
 		break;
 	default:
 		break;
@@ -232,17 +236,15 @@ BOOL CRSKDemoDlg::OnInitDialog()
 	audio_file_size = ftell(fpPcm);
 	fseek(fpPcm, 0, SEEK_SET);
 
-	video_size = width * height * 3 / 2;
-	video_buffer = new uint8_t[video_size];
-	memset(video_buffer, 0, video_size);
-
 	audio_size = (samplRate / 100) * audio_channel * 2;
 	audio_buffer = new uint8_t[audio_size];
 	memset(audio_buffer, 0, audio_size);
 	samplesPerChannel = samplRate / 100;
 
 	m_eventHandler.m_hwnd = m_hWnd;
-	m_videoSourceSink->initialize(&m_eventHandler, "aab8b8f5a8cd4469a63042fcfafe7063");
+
+	VideoConfig config = { 1280, 720, 15, 2000 };
+	m_videoSourceSink->initialize(&m_eventHandler, "aab8b8f5a8cd4469a63042fcfafe7063", config);
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -301,50 +303,60 @@ HCURSOR CRSKDemoDlg::OnQueryDragIcon()
 void CRSKDemoDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	// TODO: Add your message handler code here and/or call default
-	if (nIDEvent == video_id) {
-		int bytes = fread(video_buffer, 1, video_size, fpYuv);
-		read_video_size += bytes;
-		if (read_video_size  == video_file_size) {
-			fseek(fpYuv, 0, SEEK_SET);
-			read_video_size = 0;
-		}
-		m_videoSourceSink->pushExternalVideoFrame(video_buffer, width, height);
-	}
-	else if (nIDEvent == audio_id) {
-	
-	}
 	CDialogEx::OnTimer(nIDEvent);
 }
+
+unsigned __stdcall CRSKDemoDlg::VideoThread(void* param)
+{
+	int read_video_size = 0;
+	int width = 640;
+	int height = 360;
+	CRSKDemoDlg* pThis = (CRSKDemoDlg*)param;
+
+	int video_size = width * height * 3 / 2;
+	uint8_t* video_buffer = new uint8_t[video_size];
+	memset(video_buffer, 0, video_size);
+
+	while (pThis->videoFlag) {
+		int bytes = fread(video_buffer, 1, video_size, pThis->fpYuv);
+		read_video_size += bytes;
+		if (read_video_size == pThis->video_file_size) {
+			fseek(pThis->fpYuv, 0, SEEK_SET);
+			read_video_size = 0;
+		}
+
+		VideoFrameIpcHeader videoHeader = { width, height, GetTickCount64() };
+		pThis->m_videoSourceSink->pushExternalVideoFrame(video_buffer, videoHeader);
+		Sleep(100);
+	}
+
+	if (video_buffer) {
+		delete[] video_buffer;
+		video_buffer = nullptr;
+	}
+	return 0;
+}
+
 unsigned __stdcall CRSKDemoDlg::AudioThread(void* param)
 {
 	int read_audio_size = 0;
 	CRSKDemoDlg* pThis = (CRSKDemoDlg*)param;
-	while (true) {
+	while (pThis->audioFlag) {
 		int audio_bytes = fread(pThis->audio_buffer, 1, pThis->audio_size, pThis->fpPcm);
 		read_audio_size += audio_bytes;
 		if (read_audio_size == pThis->audio_file_size) {
 			fseek(pThis->fpPcm, 0, SEEK_SET);
 			read_audio_size = 0;
 		}
-		AudioFrameIpcHeader audioHeader = { pThis->audio_channel, pThis->samplRate, pThis->samplesPerChannel, pThis->audio_size };
+		AudioFrameIpcHeader audioHeader = { pThis->audio_channel, pThis->samplRate, pThis->samplesPerChannel, pThis->audio_size, GetTickCount64() };
 		pThis->m_videoSourceSink->pushExternalAudioFrame(pThis->audio_buffer, audioHeader);
 		Sleep(10);
 	}
+	return 0;
 }
 
 void CRSKDemoDlg::OnBnClickedOk()
-{
-
-	// default maximum parameter = {1920, 1080}, if not setMaxExternalVideoFrameParameter
-	// If maximum width > 1920, height > 1080, setMaxExternalVideoFrameParameter before startStreaming
-    VideoFrameIpcHeader videoParam = { 1920, 1080 };
-	m_videoSourceSink->setMaxExternalVideoFrameParameter(videoParam);
-
-	// default parameter = {1920, 1080}, if not setMaxExternalVideoFrameParameter
-	// If maximum samples > 480, sampleRate > 48000, setMaxExternalAudioFrameParameter before startStreaming
-	AudioFrameIpcHeader audioParam = { 2, 48000, 480, 480 * 2 * 2 }; //channel  samplerate  samples size
-	m_videoSourceSink->setMaxExternalAudioFrameParameter(audioParam);
-
+{	
 	m_videoSourceSink->startStreaming(publishurl.c_str());
 	m_lstInfo.InsertString(m_lstInfo.GetCount(), _T("startStreaming"));
 	m_btnStart.EnableWindow(FALSE);
@@ -357,8 +369,11 @@ void CRSKDemoDlg::OnBnClickedOk()
 void CRSKDemoDlg::OnBnClickedButtonStiop()
 {
 	if (startSuccess) {
-		KillTimer(audio_id);
-		KillTimer(video_id);
+		audioFlag = false;
+		videoFlag = false;
+		WaitForSingleObject(hAudioThread, INFINITE);
+		WaitForSingleObject(hVideoThread, INFINITE);
+
 		startSuccess = false;
 	}
 	m_videoSourceSink->stopStreaming();

@@ -27,7 +27,7 @@
 #endif
 
 #include "video_source_ipc.h"
-#include "IAgoraStreamingKit.h"
+//#include "IAgoraStreamingKit.h"
 #include "node_error.h"
 #include "node_log.h"
 #include "node_process.h"
@@ -40,9 +40,9 @@ namespace agora {
 			virtual ~IRSKVideoSourceEventHandler(){}
 
 			virtual void onStartStreamingSuccess() = 0;
-			virtual void onStartStreamingFailure(START_STREAMING_ERROR err, const char* msg) = 0;
-			virtual void onMediaStreamingError(MEDIA_STREAMING_ERROR err, const char* msg) = 0;
-			virtual void onStreamingConnectionStateChanged(STREAMING_CONNECTION_STATE state) = 0;
+			virtual void onStartStreamingFailure(VIDEO_SOURCE_START_STREAMING_ERROR err, const char* msg) = 0;
+			virtual void onMediaStreamingError(VIDEO_SOURCE_MEDIA_STREAMING_ERROR err, const char* msg) = 0;
+			virtual void onStreamingConnectionStateChanged(VIDEO_SOURCE_STREAMING_CONNECTION_STATE state) = 0;
 			virtual void onVideoSourceExit() = 0;
 		};
 
@@ -51,7 +51,7 @@ namespace agora {
 		public:
 			RSKVideoSourceSink();
 			~RSKVideoSourceSink();
-			virtual bool initialize(IRSKVideoSourceEventHandler *eventHandler, const char* appid);
+			virtual bool initialize(IRSKVideoSourceEventHandler *eventHandler, const char* appid, VideoConfig config);
 			virtual node_error release();
 			virtual void onMessage(unsigned int msg, char* payload, unsigned int len)override;
 
@@ -59,15 +59,15 @@ namespace agora {
 			 int stopStreaming();
 			int muteAudioStream(bool muted);
 			int muteVideoStream(bool muted);
-			int setAudioStreamConfiguration(const AudioStreamConfiguration& config);
-			int setVideoStreamConfiguration(const VideoStreamConfiguration& config);
+			int setAudioStreamConfiguration(const AudioStreamConfigurationCmd& config);
+			int setVideoStreamConfiguration(const VideoStreamConfigurationCmd& config);
 			int switchResolution(int width, int height);
 			int adjustRecordingSignalVolume(int volume);
 
 			int setMaxExternalAudioFrameParameter(AudioFrameIpcHeader);
 			int setMaxExternalVideoFrameParameter(VideoFrameIpcHeader);
 
-			void pushExternalVideoFrame(uint8_t* buffer, int width, int height);
+			void pushExternalVideoFrame(uint8_t* buffer,VideoFrameIpcHeader videoHeader);
 			void pushExternalAudioFrame(uint8_t* buffer , AudioFrameIpcHeader audioHeader);
 		private:
 			void msgThread();

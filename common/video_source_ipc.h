@@ -20,11 +20,11 @@
 #include <functional>
 #include <thread>
 #include <memory>
-#include "IAgoraStreamingKit.h"
+//#include "IAgoraStreamingKit.h"
 
 #define MAX_PARAMETER_LEN 512
 #define MAX_MSG_LEN 512
-using namespace agora::streaming;
+//using namespace agora::streaming;
 /**
  * RSKIpcMsg define the message type transferred between node ADDON and vidoe source process
  */
@@ -80,12 +80,59 @@ enum RSKIpcMsg
 	AGORA_UPC_SETUP_LOCAL_RENDER_MODE
 };
 
+enum VIDEO_SOURCE_START_STREAMING_ERROR {
+	// No error occurs.
+	VIDEO_SOURCE_START_STREAMING_ERR_OK = 0,
+	// A general error occurs (no specified reason).
+	VIDEO_SOURCE_START_STREAMING_ERR_FAILED = 1,
+	// Streaming kit is not initialized.
+	VIDEO_SOURCE_START_STREAMING_ERR_NOT_INITIALIZED = 2,
+	// Streaming kit is already started.
+	VIDEO_SOURCE_START_STREAMING_ERR_ALREADY_STARTED = 3,
+	// Failed to open audio device.
+	VIDEO_SOURCE_START_STREAMING_ERR_OPEN_AUDIO_DEVICE = 4,
+	// Failed to open video device.
+	VIDEO_SOURCE_START_STREAMING_ERR_OPEN_VIDEO_DEVICE = 5,
+	// Failed to connect RTMP.
+	VIDEO_SOURCE_START_STREAMING_ERR_CONNECT_RTMP = 6,
+	// Invalid argument used.
+	VIDEO_SOURCE_START_STREAMING_ERR_INVALID_ARGUMENT = 7,
+};
+
+// The error codes for media streaming
+// GENERATED_JAVA_ENUM_PACKAGE: io.agora.streaming
+enum VIDEO_SOURCE_MEDIA_STREAMING_ERROR {
+	// No error occurs.
+	VIDEO_SOURCE_MEDIA_STREAMING_ERR_OK = 0,
+	// A general error occurs (no specified reason).
+	VIDEO_SOURCE_MEDIA_STREAMING_ERR_FAILED = 1,
+	// Audio publication error.
+	VIDEO_SOURCE_MEDIA_STREAMING_ERR_AUDIO_PUBLICATION = 2,
+	// Video publication error.
+	VIDEO_SOURCE_MEDIA_STREAMING_ERR_VIDEO_PUBLICATION = 3,
+};
+
+// The connection state of media streaming
+// GENERATED_JAVA_ENUM_PACKAGE: io.agora.streaming
+enum VIDEO_SOURCE_STREAMING_CONNECTION_STATE {
+	// The SDK is disconnected from streaming server.
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE_DISCONNECTED = 0,
+	// The SDK is connected to streaming server.
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE_CONNECTED = 1,
+	// The SDK is trying to reconnect to streaming server.
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE_RECONNECTING = 2,
+	// The SDK fails to connect to streaming server.
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE_FAILED = 3,
+};
+
+
 // only I420
 struct VideoFrameIpcHeader
 {
 	int width = 1920;
 	int height = 1080;
 	uint32_t len;
+	int64_t renderTimeMs;
 };
 
 struct AudioFrameIpcHeader
@@ -94,6 +141,7 @@ struct AudioFrameIpcHeader
 	int sampleRate;
 	int samplesPerChannel;
 	uint32_t audioSize;
+	int64_t renderTimeMs;
 };
 
 struct ExternalAudioFrameCmd
@@ -144,18 +192,41 @@ public:
 	}
 };
 
+struct VideoConfig {
+	int width;
+	int height;
+	int fps;
+	int bitrate;
+public:
+	VideoConfig()
+		: width(640)
+		, height(360)
+		, fps(15)
+		, bitrate(500) 
+	{
+
+	}
+
+	VideoConfig(int w, int h, int f, int b)
+		: width(w)
+		, height(h)
+		, fps(f)
+		, bitrate(b)
+	{}
+};
+
 struct AudioStreamConfigurationCmd {
 	int sampleRateHz;
 	int bytesPerSample;
 	int numberOfChannels;
 	int bitrate;
 public:
-	AudioStreamConfigurationCmd() : sampleRateHz(44100), bytesPerSample(2),
+	AudioStreamConfigurationCmd() : sampleRateHz(48000), bytesPerSample(2),
 		numberOfChannels(1), bitrate(48) {}
-	AudioStreamConfigurationCmd(agora::streaming::AudioStreamConfiguration config)
+	/*AudioStreamConfigurationCmd(agora::streaming::AudioStreamConfiguration config)
 		: sampleRateHz(config.sampleRateHz), bytesPerSample(config.bytesPerSample)
 		, numberOfChannels(config.numberOfChannels), bitrate(config.bitrate) 
-	{}
+	{}*/
 };
 
 struct VideoStreamConfigurationCmd {
@@ -165,17 +236,18 @@ struct VideoStreamConfigurationCmd {
 	int bitrate;
 	int maxBitrate;
 	int minBitrate;
-	ORIENTATION_MODE orientationMode;
-	VIDEO_MIRROR_MODE_TYPE mirrorMode;
-	VIDEO_ENCODING_MODE_TYPE videoEncodingMode;
+	int orientationMode;
+	int mirrorMode;
+	int videoEncodingMode;
 public:
-	VideoStreamConfigurationCmd() : width(360), height(640), framerate(15),
+	VideoStreamConfigurationCmd() : width(640), height(360), framerate(15),
 		bitrate(800), maxBitrate(960), minBitrate(600),
-		orientationMode(ORIENTATION_MODE_FIXED_PORTRAIT),
-		mirrorMode(VIDEO_MIRROR_MODE_DISABLED),
-		videoEncodingMode(VIDEO_ENCODING_MODE_HARDWARE) {}
+		orientationMode(1),//ORIENTATION_MODE_FIXED_LANDSCAPE
+		mirrorMode(2), //VIDEO_MIRROR_MODE_DISABLED
+		videoEncodingMode(1)//VIDEO_ENCODING_MODE_HARDWARE
+	{}
 
-	VideoStreamConfigurationCmd(agora::streaming::VideoStreamConfiguration config)
+	/*VideoStreamConfigurationCmd(agora::streaming::VideoStreamConfiguration config)
 		: width(config.width)
 		, height(config.height)
 		, framerate(config.framerate)
@@ -186,7 +258,7 @@ public:
 		, mirrorMode(config.mirrorMode)
 		, videoEncodingMode(config.videoEncodingMode)
 		
-	{}
+	{}*/
 };
 
 
@@ -222,10 +294,10 @@ public:
 
 struct StreamingFailureCmd {
 	char msg[MAX_MSG_LEN];
-	START_STREAMING_ERROR err;
+	VIDEO_SOURCE_START_STREAMING_ERROR err;
 public:
 	StreamingFailureCmd()
-		: err(START_STREAMING_ERR_OK)
+		: err(VIDEO_SOURCE_START_STREAMING_ERR_OK)
 	{
 		memset(msg, 0, MAX_MSG_LEN);
 	}
@@ -233,20 +305,20 @@ public:
 
 struct MediaStreamingErrorCmd {
 	char msg[MAX_MSG_LEN];
-	MEDIA_STREAMING_ERROR err;
+	VIDEO_SOURCE_MEDIA_STREAMING_ERROR err;
 public:
 	MediaStreamingErrorCmd()
-		: err(MEDIA_STREAMING_ERR_OK)
+		: err(VIDEO_SOURCE_MEDIA_STREAMING_ERR_OK)
 	{
 		memset(msg, 0, MAX_MSG_LEN);
 	}
 };
 
 struct ConnectionStateCmd {
-	STREAMING_CONNECTION_STATE state;
+	VIDEO_SOURCE_STREAMING_CONNECTION_STATE state;
 public:
 	ConnectionStateCmd()
-		: state(STREAMING_CONNECTION_STATE_DISCONNECTED)
+		: state(VIDEO_SOURCE_STREAMING_CONNECTION_STATE_DISCONNECTED)
 	{
 		
 	}

@@ -95,7 +95,6 @@ private:
 	int m_videoProfile;
 	agora::media::IVideoFrameObserver::VideoFrame videoFrame;
 	agora::media::IAudioFrameObserver::AudioFrame audioFrame;
-	VideoStreamConfiguration vsc;
 
 };
 

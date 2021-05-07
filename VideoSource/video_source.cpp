@@ -75,6 +75,15 @@ bool RSKVideoSource::initialize()
     m_paramParser->initialize(m_params);
 
     std::string appid = m_paramParser->getParameter("appid");
+	std::string width = m_paramParser->getParameter("width");
+	std::string height = m_paramParser->getParameter("height");
+
+	std::string fps = m_paramParser->getParameter("fps");
+	std::string bitrate = m_paramParser->getParameter("bitrate");
+	//std::string sampleRate = m_paramParser->getParameter("sampleRate");
+	//std::string channels = m_paramParser->getParameter("channels");
+	//std::string samples = m_paramParser->getParameter("samples");
+
     if (appid.empty()) {
         LOG_ERROR("%s, appid is null\n", __FUNCTION__);
         LOG_LEAVE;
@@ -111,7 +120,15 @@ bool RSKVideoSource::initialize()
 	StreamingContext context;
 	context.eventHandler = m_eventHandler.get();
 	context.appId = appid.c_str();
-	
+
+	context.audioStreamConfiguration.sampleRateHz = 48000;
+	context.audioStreamConfiguration.numberOfChannels = 2;
+	context.videoStreamConfiguration.width = strtoul(width.c_str(), nullptr, 10);
+	context.videoStreamConfiguration.height = strtoul(height.c_str(), nullptr, 10);;
+	context.videoStreamConfiguration.framerate = strtoul(fps.c_str(), nullptr, 10);;
+	context.videoStreamConfiguration.bitrate = strtoul(bitrate.c_str(), nullptr, 10);;
+	context.videoStreamConfiguration.mirrorMode = VIDEO_MIRROR_MODE_DISABLED;
+	context.videoStreamConfiguration.orientationMode = ORIENTATION_MODE_FIXED_LANDSCAPE;
 	if (m_rskEngine->initialize(context) != 0) {
 		LOG_ERROR("%s, RSKVideoSource initialize failed.\n", __FUNCTION__);
 		LOG_LEAVE;
@@ -126,8 +143,6 @@ bool RSKVideoSource::initialize()
 	m_ipcReceiverAudio.reset();
 	m_ipc->sendMessage(RSK_IPC_SOURCE_READY, nullptr, 0);
 	m_initialized = true;
-	vsc.width = 640;
-	vsc.height = 360;
     LOG_LEAVE;
     return true;
 }
@@ -159,7 +174,7 @@ void RSKVideoSource::onStartStreamingSuccess()
 void RSKVideoSource::onStartStreamingFailure(START_STREAMING_ERROR err, const char* msg)
 {
 	std::unique_ptr<StreamingFailureCmd> cmd(new StreamingFailureCmd);
-	cmd->err = err;
+	cmd->err = (VIDEO_SOURCE_START_STREAMING_ERROR)err;
 	strcpy_s(cmd->msg, MAX_MSG_LEN, msg);
 	m_ipc->sendMessage(RSK_IPC_START_STREAMING_FALURE, (char*)&cmd, sizeof(StreamingFailureCmd));
 }
@@ -167,7 +182,7 @@ void RSKVideoSource::onStartStreamingFailure(START_STREAMING_ERROR err, const ch
 void RSKVideoSource::onMediaStreamingError(MEDIA_STREAMING_ERROR err, const char* msg)
 {
 	std::unique_ptr<MediaStreamingErrorCmd> cmd(new MediaStreamingErrorCmd);
-	cmd->err  = err;
+	cmd->err  = (VIDEO_SOURCE_MEDIA_STREAMING_ERROR)err;
 	strcpy_s(cmd->msg, MAX_MSG_LEN, msg);
 	m_ipc->sendMessage(RSK_IPC_MEDIA_STREAMING_ERROR, (char*)&cmd, sizeof(MediaStreamingErrorCmd));
 }
@@ -175,7 +190,7 @@ void RSKVideoSource::onMediaStreamingError(MEDIA_STREAMING_ERROR err, const char
 void RSKVideoSource::onStreamingConnectionStateChanged(STREAMING_CONNECTION_STATE state)
 {
 	std::unique_ptr<ConnectionStateCmd> cmd(new ConnectionStateCmd);
-	cmd->state = state;
+	cmd->state = (VIDEO_SOURCE_STREAMING_CONNECTION_STATE)state;
 	m_ipc->sendMessage(RSK_IPC_STREAMING_CONNECTION_STATE_CHANGED, (char*)cmd.get(), sizeof(int));
 }
 
@@ -198,7 +213,6 @@ void RSKVideoSource::onMessage(unsigned int msg, char* payload, unsigned int len
 	if (msg == RSK_IPC_START_STREAMING) {
 		char* url = payload;
 		LOG_INFO("%s, startStreaming, url:%s\n", __FUNCTION__, url);
-		m_rskEngine->setVideoStreamConfiguration(vsc);
 		m_rskEngine->startStreaming(url);
 	}
 	else if (msg == RSK_IPC_STOP_STREAMING) {
@@ -236,16 +250,16 @@ void RSKVideoSource::onMessage(unsigned int msg, char* payload, unsigned int len
 	}
 	else if (msg == RSK_IPC_SET_VIDEO_CONFIG) {
 		VideoStreamConfigurationCmd* cmd = (VideoStreamConfigurationCmd*)payload;
-
+		agora::streaming::VideoStreamConfiguration vsc;
 		vsc.width = cmd->width;
 		vsc.height = cmd->height;
 		vsc.framerate = cmd->framerate;
 		vsc.bitrate = cmd->bitrate;
 		vsc.maxBitrate = cmd->maxBitrate;
 		vsc.minBitrate = cmd->minBitrate;
-		vsc.orientationMode = cmd->orientationMode;
-		vsc.mirrorMode = cmd->mirrorMode;
-		vsc.videoEncodingMode = cmd->videoEncodingMode;
+		vsc.orientationMode = ORIENTATION_MODE_FIXED_LANDSCAPE;//(ORIENTATION_MODE)cmd->orientationMode;
+		vsc.mirrorMode = (VIDEO_MIRROR_MODE_TYPE)cmd->mirrorMode;
+		vsc.videoEncodingMode = (VIDEO_ENCODING_MODE_TYPE)cmd->videoEncodingMode;
 		LOG_INFO("setVideoStreamConfiguration, width : %d, height : %d, framerate :%d, bitrate :%d, maxBitrate:%d,minBitrate:%d,orientationMode:%d, mirrorMode:%d, videoEncodingMode:%d \n",
 			vsc.width, vsc.height, vsc.framerate, vsc.bitrate, vsc.maxBitrate, vsc.minBitrate, vsc.orientationMode, vsc.mirrorMode, vsc.videoEncodingMode);
 		m_rskEngine->setVideoStreamConfiguration(vsc);
@@ -275,11 +289,6 @@ void RSKVideoSource::onMessage(unsigned int msg, char* payload, unsigned int len
 	else if (msg == RSK_IPC_EXTERNAL_VIDEO_FRAME_PARAMTER) {
 		ExternalVideoFrameCmd* cmd = (ExternalVideoFrameCmd*)payload;
 		if (videoFrame.yBuffer) {
-			videoFrame.width   = cmd->width;
-			videoFrame.height  = cmd->height;
-			videoFrame.yStride = cmd->width;
-			videoFrame.uStride = cmd->width / 2;
-			videoFrame.vStride = cmd->width / 2;
 			delete[] videoFrame.yBuffer;
 			videoFrame.yBuffer = new uint8_t[cmd->width * cmd->height];
 		}
@@ -312,7 +321,7 @@ void RSKVideoSource::deliverFrame(const char* payload, int len)
 	videoFrame.width = videoHeader->width;
 	videoFrame.height = videoHeader->height;
 	videoFrame.type = agora::media::base::VIDEO_PIXEL_I420;
-	videoFrame.renderTimeMs = GetTickCount64();
+	videoFrame.renderTimeMs = videoHeader->renderTimeMs;
 
 	videoFrame.yStride = videoHeader->width;
 	videoFrame.uStride = videoHeader->width / 2;
@@ -338,7 +347,7 @@ void RSKVideoSource::deliverAudioFrame(const char* payload, int len)
 	}
 #endif
 	memcpy(audioFrame.buffer, buffer, audioHeader->audioSize);
-	audioFrame.renderTimeMs = GetTickCount64();
+	audioFrame.renderTimeMs = audioHeader->renderTimeMs;
 	m_rskEngine->pushExternalAudioFrame(audioFrame);
 }
 

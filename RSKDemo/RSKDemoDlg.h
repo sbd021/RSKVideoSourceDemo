@@ -20,9 +20,9 @@ public:
 	virtual ~CRSKVideoSourceEventHandler() {}
 
 	virtual void onStartStreamingSuccess() override;
-	virtual void onStartStreamingFailure(START_STREAMING_ERROR err, const char* msg) override;
-	virtual void onMediaStreamingError(MEDIA_STREAMING_ERROR err, const char* msg) override;
-	virtual void onStreamingConnectionStateChanged(STREAMING_CONNECTION_STATE state) override;
+	virtual void onStartStreamingFailure(VIDEO_SOURCE_START_STREAMING_ERROR err, const char* msg) override;
+	virtual void onMediaStreamingError(VIDEO_SOURCE_MEDIA_STREAMING_ERROR err, const char* msg) override;
+	virtual void onStreamingConnectionStateChanged(VIDEO_SOURCE_STREAMING_CONNECTION_STATE state) override;
 	virtual void onVideoSourceExit() override;
 
 	HWND m_hwnd = NULL;
@@ -45,15 +45,13 @@ public:
 private:
 	std::unique_ptr<RSKVideoSourceSink> m_videoSourceSink;
 	CRSKVideoSourceEventHandler m_eventHandler;
-	int video_id = 10086;
-	int audio_id = 10087;
+	bool videoFlag = true;
+	bool audioFlag = true;
+
 	FILE* fpPcm = NULL;
 	FILE* fpYuv = NULL;
-	int width = 640;
-	int height = 360;
+	
 	int video_file_size = 0;
-	int video_size = 640 * 360 * 3 / 2;
-	uint8_t* video_buffer = NULL;
 	int read_video_size = 0;
 
 	int audio_file_size = 0;
@@ -67,9 +65,10 @@ private:
 	std::string publishurl = "";
 	bool startSuccess = true;
 
-	HANDLE hAudioTherad = NULL;
-
+	HANDLE hAudioThread = NULL;
+	HANDLE hVideoThread = NULL;
 	static  unsigned __stdcall AudioThread(void*);
+	static  unsigned __stdcall VideoThread(void*);
 // Implementation
 protected:
 	HICON m_hIcon;
